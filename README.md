@@ -1,121 +1,239 @@
-# reinforcement-learning-101
-Repository for all of my reinforcement learning escapades
+# Reinforcement Learning 101
 
-A physics-based drone landing game designed for reinforcement learning research and experimentation. Control a drone to safely land on platforms while managing fuel, speed, and angle.
+My hands-on journey learning reinforcement learning from scratch. This repository contains:
+- ✅ **From-scratch RL algorithm implementations** (policy gradients, actor-critic, etc.)
+- ✅ **Custom environments** for experimentation (drone landing, racing games)
+- ✅ **Training notebooks** documenting real challenges and solutions
+- ✅ **Reward engineering** lessons learned through trial and error
 
-![Game Preview](https://via.placeholder.com/800x400/87CEEB/000000?text=Drone+Landing+Game)
+*A learning repository featuring real implementations with all their messy details - not just wrappers around libraries.*
 
-## Features
+---
 
-- **Clean RL API** - Simple gym-style interface for training agents
-- **Socket Interface** - Train remotely over TCP for distributed RL
-- **Parallel Training** - Run multiple game instances simultaneously
-- **Randomization** - Randomize drone/platform spawns for robust policies
-- **Physics-based** - Realistic gravity, thrust, drag, and rotation
-- **Manual Play** - Test the challenge yourself with keyboard controls
+## 📝 RL Algorithm Implementations
 
-## Quick Start
+### Policy Gradient Methods
+
+#### [Policy_Gradients_Baseline.ipynb](Policy_Gradients_Baseline.ipynb) - REINFORCE with Baseline
+**Status:** ✅ Complete
+
+A complete from-scratch implementation of REINFORCE with baseline for the drone landing task.
+
+**What's Implemented:**
+- Policy network (3-layer MLP with LayerNorm)
+- Parallel episode collection from multiple game instances
+- Batched policy inference for GPU efficiency
+- Monte Carlo returns computation (Bellman equation)
+- Advantage estimation with baseline
+- Gradient clipping and advantage normalization
+- Custom reward shaping (velocity alignment, horizontal positioning)
+
+**Real Challenges Documented:**
+- 🐛 **Hovering exploit** - Policy learned to hover near platform instead of landing
+  - Solution: Time penalties + hovering-specific penalties
+- 🐛 **Spinning exploit** - Policy learned to rotate in place for positive rewards
+  - Solution: Angular velocity penalties + removed continuous distance rewards
+- 🐛 **Horizontal misalignment** - Drone approaching but missing the 100px-wide platform
+  - Solution: Explicit horizontal alignment rewards with tight tolerances
+- 🐛 **Training instability** - Large gradient updates causing policy collapse
+  - Solution: Gradient clipping (max_norm=0.5) + advantage normalization
+
+**Key Techniques:**
+```python
+# Advantage calculation with baseline
+returns_tensor = torch.tensor(batch_returns)
+baseline = returns_tensor.mean()
+advantages = (returns_tensor - baseline)
+advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+# Policy gradient loss
+loss = -(log_probs_tensor * advantages).mean()
+```
+
+**Training Results:**
+- Trained with 6 parallel game instances
+- Curriculum learning: 75 → 250 max steps over 1000 iterations
+- Achieved occasional landings after ~500 iterations
+- Baseline improved from -324 → +16 (positive returns!)
+
+---
+
+### Future Implementations *(Planned)*
+- **Actor-Critic (A2C)** - Reduce variance with value function
+- **Proximal Policy Optimization (PPO)** - Stable policy updates with clipping
+- **Deep Q-Networks (DQN)** - Value-based methods for discrete actions
+- **Soft Actor-Critic (SAC)** - Off-policy with entropy regularization
+- **Group Relative Policy Optimization (GRPO)** - Stuff used to train Deepseek-r1
+
+---
+
+## 🎯 Environments
+
+### 🚁 [Delivery Drone Landing](delivery_drone/)
+
+A physics-based drone landing game designed as a clean RL environment for experimentation.
+
+**Features:**
+- Clean gym-style API for RL training
+- Socket-based distributed training support
+- Parallel environment support (multi-game instances)
+- Spawn randomization for robust policy learning
+- Physics-based simulation (gravity, thrust, drag)
+- Manual play mode for understanding the task
+
+**Key RL Challenges:**
+- Continuous control (thrust and rotation)
+- Sparse rewards with terminal success
+- Multi-objective optimization (speed, angle, position, fuel)
+- Reward shaping to avoid exploitation (hovering, spinning)
+- Horizontal alignment precision (100px platform width)
+
+**Landing Criteria:**
+- Speed ≤ 3.0 pixels/frame (0.3 normalized)
+- Angle ≤ 20° from upright (0.111 normalized)
+- Bottom center of drone must be on platform
+- Must have fuel remaining
+
+**Status:** ✅ Complete - Trainable with policy gradient methods
+
+[→ View Full Documentation](delivery_drone/README.md)
+
+---
+
+### 🏎️ Forza RL *(Planned)*
+
+Reinforcement learning for racing game control and optimization.
+
+**Status:** 🚧 In Development
+
+---
+
+## 🚀 Quick Start
+
+### Run Algorithm Implementations
 
 ```bash
+# Install dependencies
+pip install torch numpy pygame jupyter tqdm
+
+# Start Jupyter
+jupyter notebook
+
+# Open and run:
+# - Policy_Gradients_Baseline.ipynb (REINFORCE with baseline implementation)
+```
+
+### Train in the Drone Environment
+
+```bash
+# Navigate to environment
+cd delivery_drone
+
 # Install dependencies
 pip install pygame numpy torch
 
 # Play manually to understand the task
-cd delivery_drone
 python manual_play.py
 
-# Run parallel training server (6 games)
-python socket_server.py --num-games 6 --render none
+# Start training server with 6 parallel games
+python socket_server.py --num-games 6 --render none --randomize-drone
 
-# Train an RL agent (in another terminal)
-python train_agent.py
+# Run your training script
+# See Policy_Gradients_Baseline.ipynb for complete training code
 ```
 
-## Project Structure
+---
 
-```
-delivery_drone/
-├── delivery_drone/        # Main package
-│   ├── game/             # Game engine
-│   ├── examples/         # Example agents
-│   ├── models/           # Saved models
-│   └── docs/             # Documentation
-├── RL_1.ipynb            # Training notebook (example)
-└── README.md             # This file
-```
+## 📚 Learning Path
 
-## Documentation
+This repository documents learning RL through **implementation, not just theory**.
 
-See [delivery_drone/README.md](delivery_drone/README.md) for:
-- Complete API documentation
-- State space and action space details
-- Reward structure
-- Socket API reference
-- Example agents and training tips
+### Phase 1: Understanding Policy Gradients (✅ Complete)
+- ✅ Implemented REINFORCE with baseline from scratch
+- ✅ Built custom drone landing environment with socket server
+- ✅ Learned reward shaping the hard way (debugging hovering/spinning exploits)
+- ✅ Implemented parallel training infrastructure
+- ✅ Discovered importance of velocity-based rewards over proximity rewards
+- ✅ Learned gradient clipping and advantage normalization
 
-## Landing Criteria
+**Key Insight:** *Reward engineering is 90% of the work in RL. The algorithm is the easy part.*
 
-Successfully land by meeting ALL conditions:
-- **Speed** ≤ 3.0 pixels/frame (0.3 normalized)
-- **Angle** ≤ 20° from upright (0.111 normalized)
-- **Position**: Bottom center of drone on platform
-- **Fuel**: Must have fuel remaining
+### Phase 2: Value-Based Methods (🚧 In Progress)
+- Implementing DQN for discrete action spaces
+- Exploring experience replay and target networks
+- Comparing sample efficiency with policy gradients
 
-## RL Training Tips
+### Phase 3: Advanced Policy Gradients (📋 Planned)
+- Actor-Critic methods (A2C, A3C)
+- Proximal Policy Optimization (PPO)
+- Trust region methods
 
-1. **Reward shaping** - Avoid continuous proximity rewards (causes hovering exploits)
-2. **Horizontal alignment** - Platform is only 100px wide, alignment is critical
-3. **Parallel environments** - Use `--num-games 6-12` for faster training
-4. **Randomization** - Use `--randomize-drone` and `--randomize-platform` for robust policies
-5. **Velocity alignment** - Reward moving *toward* platform, not just being near it
+---
 
-## Training Features
+## 🛠️ Technologies
 
-### Parallel Game Instances
-```bash
-# Run 6 parallel games for faster data collection
-python socket_server.py --num-games 6 --render none
-```
+- **Python 3.12+** - Primary language
+- **PyTorch** - Neural networks and automatic differentiation
+- **Pygame** - Game rendering and physics simulation
+- **NumPy** - Numerical computations
+- **Jupyter** - Interactive development and documentation
+- **Socket Programming** - Distributed training infrastructure
 
-### Spawn Randomization
-```bash
-# Randomize both drone and platform positions
-python socket_server.py --randomize-drone --randomize-platform
+---
 
-# Fixed spawns for debugging
-python socket_server.py --fixed-spawn
+## 📖 Documentation
 
-# Platform random, drone fixed (default)
-python socket_server.py
-```
+Each implementation and environment contains detailed documentation:
 
-## Example Training Code
+- **Training Notebooks** - Complete implementations with explanations
+- **Environment READMEs** - API documentation, setup instructions
+- **Implementation Notes** - Design decisions and lessons learned
+- **[RL Methods Summary](delivery_drone/docs/RL_METHODS_SUMMARY.md)** - Theory notes
 
-```python
-from delivery_drone.game.socket_client import DroneGameClient
+---
 
-client = DroneGameClient()
-client.connect()
+## 📊 Resources
 
-# Collect episodes from all parallel games
-for episode in range(num_episodes):
-    for game_id in range(client.num_games):
-        state = client.reset(game_id)
-        done = False
+### RL Theory
+- [Spinning Up in Deep RL](https://spinningup.openai.com/) - OpenAI's comprehensive RL guide
+- [Sutton & Barto](http://incompleteideas.net/book/the-book-2nd.html) - The RL textbook
+- [CS285 Deep RL](http://rail.eecs.berkeley.edu/deeprlcourse/) - Berkeley's Deep RL course
+- [My RL Methods Summary](delivery_drone/docs/RL_METHODS_SUMMARY.md) - Personal notes on RL algorithms
 
-        while not done:
-            action = policy(state)
-            state, reward, done, info = client.step(action, game_id)
-```
+### Implementation References
+- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/) - Production RL algorithms
+- [Gymnasium](https://gymnasium.farama.org/) - RL environment standard
+- [CleanRL](https://github.com/vwxyzjn/cleanrl) - Single-file RL implementations
+- [Spinning Up Code](https://github.com/openai/spinningup) - OpenAI's RL implementations
 
-## License
+---
+
+## 🤝 Contributing
+
+This is a personal learning repository, but discussions are welcome! Feel free to:
+- Open issues for questions about implementations
+- Share your own RL experiments or training tips
+- Suggest improvements to reward functions or architectures
+- Report bugs in environments or training code
+
+**Note:** This repo prioritizes **learning and experimentation** over production-ready code. Code is documented but not optimized.
+
+---
+
+## 📝 License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
-## Contributing
+Free to use for learning, research, and experimentation.
 
-This is a learning project. Feel free to fork, experiment, and share your trained policies!
+---
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
-Built as a reinforcement learning research environment for exploring policy gradient methods, reward shaping, and curriculum learning.
+This learning journey is inspired by:
+- **OpenAI Spinning Up** - For the excellent RL curriculum
+- **CS285** (UC Berkeley) - For deep RL theoretical foundations
+- **Sutton & Barto** - For the RL bible
+- **The RL research community** - For publishing implementations and lessons learned
+
+**Note:** This repository is actively being developed as I learn. Expect regular updates, new implementations, and improved training techniques. Follow along for the messy reality of learning RL! 🚀
