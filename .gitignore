@@ -23,6 +23,8 @@ wheels/
 .installed.cfg
 *.egg
 
+.claude/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb_checkpoints/
