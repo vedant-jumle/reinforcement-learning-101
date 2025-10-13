@@ -1,0 +1,4 @@
+# Delivery Drone Game Requirements
+
+pygame>=2.5.0       # Game engine and visualization
+numpy>=1.24.0       # Math and physics calculations
