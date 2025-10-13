@@ -30,8 +30,8 @@ wheels/
 *.ipynb_checkpoints/
 
 # Training notebooks (contain execution outputs)
-RL_*.ipynb
-test.ipynb
+# RL_*.ipynb
+# test.ipynb
 
 # PyCharm
 .idea/
