@@ -100,11 +100,39 @@ A physics-based drone landing game designed as a clean RL environment for experi
 
 ---
 
-### 🏎️ Forza RL *(Planned)*
+### 🚗 [2D Visual Driving RL](visual_driving_2d/)
 
-Reinforcement learning for racing game control and optimization.
+Learning autonomous driving from raw pixel observations using progressive complexity training.
+
+**Features:**
+- Visual RL with CNN-based policies (no clean state vectors)
+- Progressive curriculum: basic driving → navigation → obstacles → traffic
+- Top-down 2D rendering for tractable learning
+- Frame stacking and visual feature engineering
+- Multiple phases of increasing complexity
+
+**Key RL Challenges:**
+- Learning from high-dimensional visual input (84x84x3 RGB images)
+- Feature extraction via CNNs (what patterns matter for driving?)
+- Multi-objective optimization (safety, efficiency, smoothness)
+- Curriculum learning across 10+ progressive phases
+- Generalization across road layouts and conditions
+
+**Progressive Phases:**
+1. **Basic Driving** - Lane keeping and vehicle control from pixels
+2. **Navigation** - Goal-directed driving through road networks
+3. **Static Obstacles** - Collision avoidance with parked cars/barriers
+4. **Dynamic Traffic** - Handling other vehicles (rule-based AI)
+5. **Traffic Signals** - Following lights, stop signs, right-of-way
+6. **Pedestrians** - Crosswalk yielding and safety
+7. **Environmental Variations** - Weather, lighting, road textures
+8. **Highway Driving** - High-speed multi-lane navigation
+9. **Parking** - Precision control and reversing
+10. **Advanced** - Roundabouts, multi-agent RL, V2V communication
 
 **Status:** 🚧 In Development
+
+[→ View Full Documentation](visual_driving_2d/README.md)
 
 ---
 
