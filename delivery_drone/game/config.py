@@ -32,7 +32,7 @@ FUEL_CONSUMPTION_SIDE = 1.0  # Fuel per frame when side thrust active
 PLATFORM_WIDTH = 100
 PLATFORM_HEIGHT = 20
 PLATFORM_Y = WINDOW_HEIGHT - 100  # Default height from top (for backward compatibility)
-PLATFORM_Y_MIN = 350  # Minimum Y position (higher up, easier)
+PLATFORM_Y_MIN = 100  # Minimum Y position (higher up, easier)
 PLATFORM_Y_MAX = 550  # Maximum Y position (lower down, harder)
 
 # Landing conditions

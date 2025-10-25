@@ -25,6 +25,7 @@ class DroneState:
     speed: float
     landed: bool
     crashed: bool
+    steps: int
 
 
 class DroneGameClient:

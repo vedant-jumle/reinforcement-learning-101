@@ -171,6 +171,7 @@ class DroneGame:
             'speed': self.drone.get_speed() / 10.0,
             'landed': self.drone.landed,
             'crashed': self.drone.crashed,
+            'steps': self.steps,
         }
 
         return state
