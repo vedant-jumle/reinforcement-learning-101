@@ -1,3 +1,7 @@
-"""Visual Driving 2D - Game Module"""
+"""
+Visual Driving 2D - Car Racing Game with RL Interface
+"""
 
-__version__ = "0.1.0"
+from .game_engine import RacingGame
+
+__all__ = ['RacingGame']
