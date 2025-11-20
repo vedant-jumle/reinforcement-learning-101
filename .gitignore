@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+CLAUDE.md
 *.so
 .Python
 env/
