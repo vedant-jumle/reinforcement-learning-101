@@ -10,8 +10,15 @@ import numpy as np
 import Box2D
 from Box2D.b2 import (fixtureDef, polygonShape, contactListener)
 
-import pyglet
-from pyglet import gl
+try:
+    # Try gymnasium first (works on WSL2)
+    from gymnasium.envs.classic_control import rendering
+    USING_GYMNASIUM = True
+except ImportError:
+    # Fallback to pyglet (may not work on WSL2)
+    import pyglet
+    from pyglet import gl
+    USING_GYMNASIUM = False
 
 from . import config
 from .car_dynamics import Car
@@ -241,18 +248,33 @@ class RacingGame:
         assert mode in ['human', 'state_pixels', 'rgb_array']
 
         if self.viewer is None:
-            from pyglet import gl
-            self.viewer = pyglet.window.Window(width=config.WINDOW_W, height=config.WINDOW_H)
-            self.score_label = pyglet.text.Label(
-                '0000',
-                font_size=36,
-                x=20,
-                y=config.WINDOW_H * 2.5 / 40.00,
-                anchor_x='left',
-                anchor_y='center',
-                color=(255, 255, 255, 255)
-            )
-            self.transform = Transform()
+            if USING_GYMNASIUM:
+                self.viewer = rendering.Viewer(config.WINDOW_W, config.WINDOW_H)
+                import pyglet
+                self.score_label = pyglet.text.Label(
+                    '0000',
+                    font_size=36,
+                    x=20,
+                    y=config.WINDOW_H * 2.5 / 40.00,
+                    anchor_x='left',
+                    anchor_y='center',
+                    color=(255, 255, 255, 255)
+                )
+                self.transform = rendering.Transform()
+            else:
+                import pyglet
+                from pyglet import gl
+                self.viewer = pyglet.window.Window(width=config.WINDOW_W, height=config.WINDOW_H)
+                self.score_label = pyglet.text.Label(
+                    '0000',
+                    font_size=36,
+                    x=20,
+                    y=config.WINDOW_H * 2.5 / 40.00,
+                    anchor_x='left',
+                    anchor_y='center',
+                    color=(255, 255, 255, 255)
+                )
+                self.transform = Transform()
 
         if "t" not in self.__dict__:
             return  # reset() not called yet
@@ -279,40 +301,84 @@ class RacingGame:
 
         self.car.draw(self.viewer, mode != "state_pixels")
 
-        # Setup viewport
-        if mode == 'rgb_array':
-            VP_W = config.VIDEO_W
-            VP_H = config.VIDEO_H
-        elif mode == 'state_pixels':
-            VP_W = config.STATE_W
-            VP_H = config.STATE_H
+        if USING_GYMNASIUM:
+            # Using gymnasium rendering
+            arr = None
+            win = self.viewer.window
+            win.switch_to()
+            win.dispatch_events()
+            win.clear()
+
+            t = self.transform
+            if mode == 'rgb_array':
+                VP_W = config.VIDEO_W
+                VP_H = config.VIDEO_H
+            elif mode == 'state_pixels':
+                VP_W = config.STATE_W
+                VP_H = config.STATE_H
+            else:
+                pixel_scale = 1
+                if hasattr(win.context, '_nscontext'):
+                    pixel_scale = win.context._nscontext.view().backingScaleFactor()
+                VP_W = int(pixel_scale * config.WINDOW_W)
+                VP_H = int(pixel_scale * config.WINDOW_H)
+
+            from pyglet import gl
+            gl.glViewport(0, 0, VP_W, VP_H)
+            t.enable()
+            self._render_road()
+            for geom in self.viewer.onetime_geoms:
+                geom.render()
+            self.viewer.onetime_geoms = []
+            t.disable()
+            self._render_indicators(config.WINDOW_W, config.WINDOW_H)
+
+            if mode == 'human':
+                win.flip()
+                return self.viewer.isopen
+
+            import pyglet
+            image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
+            arr = np.frombuffer(image_data.get_data(), dtype=np.uint8)
+            arr = arr.reshape(VP_H, VP_W, 4)
+            arr = arr[::-1, :, 0:3]
+            return arr
         else:
-            VP_W = config.WINDOW_W
-            VP_H = config.WINDOW_H
+            # Using pyglet directly
+            # Setup viewport
+            if mode == 'rgb_array':
+                VP_W = config.VIDEO_W
+                VP_H = config.VIDEO_H
+            elif mode == 'state_pixels':
+                VP_W = config.STATE_W
+                VP_H = config.STATE_H
+            else:
+                VP_W = config.WINDOW_W
+                VP_H = config.WINDOW_H
 
-        # Clear and render
-        gl.glClearColor(0.4, 0.8, 0.4, 1.0)
-        self.viewer.clear()
-        gl.glViewport(0, 0, VP_W, VP_H)
+            # Clear and render
+            gl.glClearColor(0.4, 0.8, 0.4, 1.0)
+            self.viewer.clear()
+            gl.glViewport(0, 0, VP_W, VP_H)
 
-        self.transform.enable()
-        self._render_road()
-        self.transform.disable()
+            self.transform.enable()
+            self._render_road()
+            self.transform.disable()
 
-        self._render_indicators(config.WINDOW_W, config.WINDOW_H)
+            self._render_indicators(config.WINDOW_W, config.WINDOW_H)
 
-        if mode == 'human':
-            self.viewer.flip()
-            return self.viewer.is_visible
+            if mode == 'human':
+                self.viewer.flip()
+                return self.viewer.is_visible
 
-        # Capture pixels
-        buffer = pyglet.image.get_buffer_manager().get_color_buffer()
-        image_data = buffer.get_image_data()
-        arr = np.frombuffer(image_data.get_data(), dtype=np.uint8)
-        arr = arr.reshape(VP_H, VP_W, 4)
-        arr = arr[::-1, :, 0:3]  # Flip and remove alpha
+            # Capture pixels
+            buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+            image_data = buffer.get_image_data()
+            arr = np.frombuffer(image_data.get_data(), dtype=np.uint8)
+            arr = arr.reshape(VP_H, VP_W, 4)
+            arr = arr[::-1, :, 0:3]  # Flip and remove alpha
 
-        return arr
+            return arr
 
     def close(self):
         """Clean up resources"""
@@ -498,6 +564,7 @@ class RacingGame:
 
     def _render_road(self):
         """Render road using OpenGL"""
+        from pyglet import gl
         gl.glBegin(gl.GL_QUADS)
         gl.glColor4f(*config.GRASS_COLOR, 1.0)
         gl.glVertex3f(-config.PLAYFIELD, +config.PLAYFIELD, 0)
@@ -520,6 +587,7 @@ class RacingGame:
 
     def _render_indicators(self, W, H):
         """Render speed/wheel indicators at bottom of screen"""
+        from pyglet import gl
         gl.glBegin(gl.GL_QUADS)
         s = W / 40.0
         h = H / 40.0
