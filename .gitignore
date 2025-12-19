@@ -42,12 +42,12 @@ blogs/
 
 # MacOS
 .DS_Store
-
+delivery_drone/models
 # Training outputs
-models/*.pth
-models/*.pt
-*.pth
-*.pt
+# models/*.pth
+# models/*.pt
+# *.pth
+# *.pt
 
 # Logs
 *.log
