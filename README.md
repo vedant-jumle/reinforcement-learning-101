@@ -1,21 +1,21 @@
 # Reinforcement Learning 101
 
 My hands-on journey learning reinforcement learning from scratch. This repository contains:
-- ✅ **From-scratch RL algorithm implementations** (policy gradients, actor-critic, etc.)
-- ✅ **Custom environments** for experimentation (drone landing, racing games)
-- ✅ **Training notebooks** documenting real challenges and solutions
-- ✅ **Reward engineering** lessons learned through trial and error
+- **From-scratch RL algorithm implementations** (policy gradients, actor-critic, etc.)
+- **Custom environments** for experimentation (drone landing)
+- **Training notebooks** documenting real challenges and solutions
+- **Reward engineering** lessons learned through trial and error
 
 *A learning repository featuring real implementations with all their messy details - not just wrappers around libraries.*
 
 ---
 
-## 📝 RL Algorithm Implementations
+## RL Algorithm Implementations
 
 ### Policy Gradient Methods
 
-#### [Policy_Gradients_Baseline.ipynb](Policy_Gradients_Baseline.ipynb) - REINFORCE with Baseline
-**Status:** ✅ Complete
+#### [Policy_Gradients.ipynb](Policy_Gradients.ipynb) - REINFORCE with Baseline
+**Status:** Complete
 
 A complete from-scratch implementation of REINFORCE with baseline for the drone landing task.
 
@@ -29,13 +29,13 @@ A complete from-scratch implementation of REINFORCE with baseline for the drone 
 - Custom reward shaping (velocity alignment, horizontal positioning)
 
 **Real Challenges Documented:**
-- 🐛 **Hovering exploit** - Policy learned to hover near platform instead of landing
+- **Hovering exploit** - Policy learned to hover near platform instead of landing
   - Solution: Time penalties + hovering-specific penalties
-- 🐛 **Spinning exploit** - Policy learned to rotate in place for positive rewards
+- **Spinning exploit** - Policy learned to rotate in place for positive rewards
   - Solution: Angular velocity penalties + removed continuous distance rewards
-- 🐛 **Horizontal misalignment** - Drone approaching but missing the 100px-wide platform
+- **Horizontal misalignment** - Drone approaching but missing the 100px-wide platform
   - Solution: Explicit horizontal alignment rewards with tight tolerances
-- 🐛 **Training instability** - Large gradient updates causing policy collapse
+- **Training instability** - Large gradient updates causing policy collapse
   - Solution: Gradient clipping (max_norm=0.5) + advantage normalization
 
 **Key Techniques:**
@@ -58,18 +58,79 @@ loss = -(log_probs_tensor * advantages).mean()
 
 ---
 
-### Future Implementations *(Planned)*
-- **Actor-Critic (A2C)** - Reduce variance with value function
-- **Proximal Policy Optimization (PPO)** - Stable policy updates with clipping
-- **Deep Q-Networks (DQN)** - Value-based methods for discrete actions
-- **Soft Actor-Critic (SAC)** - Off-policy with entropy regularization
-- **Group Relative Policy Optimization (GRPO)** - Stuff used to train Deepseek-r1
+### Actor-Critic Methods
+
+#### [Actor_Critic_Basic.ipynb](Actor_Critic_Basic.ipynb) - Basic Actor-Critic with TD Error
+**Status:** Complete
+
+Implementation of basic Actor-Critic using Temporal Difference learning for real-time, per-step updates.
+
+**What's Implemented:**
+- Two-network architecture (Actor policy + Critic value function)
+- Online learning with TD error as advantage signal
+- Batched parallel training across 6 game instances
+- Velocity-magnitude-weighted reward system
+- Critical bug fixes: moving target problem, gamma tuning, reward hacking
+
+**Key Improvements over REINFORCE:**
+- Per-step updates (no waiting for episode completion)
+- Lower variance through value function baseline
+- Faster convergence (68% success in half the training time)
+
+**Critical Bugs Fixed** (see [docs/ACTOR_CRITIC_LESSONS_LEARNED.md](docs/ACTOR_CRITIC_LESSONS_LEARNED.md)):
+1. **Moving target problem** - TD target must be detached with `torch.no_grad()`
+2. **Gamma too low** - Increased from 0.90 to 0.99 for 100-300 step episodes
+3. **Reward hacking** - Fixed hovering/zooming exploits with velocity-based rewards
 
 ---
 
-## 🎯 Environments
+#### [Actor_Critic_GAE.ipynb](Actor_Critic_GAE.ipynb) - Generalized Advantage Estimation
+**Status:** Attempted but failed
 
-### 🚁 [Delivery Drone Landing](delivery_drone/)
+Experimental implementation of GAE for variance reduction. Training completed but failed to solve the task effectively. Documented as a learning experience in [blogs/RL-2-Actor-critic/part2_gae_to_ppo.md](blogs/RL-2-Actor-critic/part2_gae_to_ppo.md).
+
+**Outcome:** GAE debugging proved challenging; pivoted to PPO for better results.
+
+---
+
+#### [Actor_Critic_PPO.ipynb](Actor_Critic_PPO.ipynb) - Proximal Policy Optimization
+**Status:** Complete
+
+Best-performing implementation using PPO's clipped objective for stable policy updates.
+
+**What's Implemented:**
+- Clipped surrogate objective for policy updates
+- Multi-epoch training on collected trajectories
+- Both policy and value network training
+- Comprehensive metrics tracking
+
+**Training Results:**
+- Achieved 76% landing success rate
+- Most stable training of all implementations
+- Saved model weights: policy v1 + critic v1
+
+---
+
+### Inference and Evaluation
+
+#### [Policy_Gradients_inference.ipynb](Policy_Gradients_inference.ipynb)
+Load and evaluate trained REINFORCE models. Includes visualization and performance analysis.
+
+#### [Actor_Critic_inference.ipynb](Actor_Critic_inference.ipynb)
+Load and evaluate trained Actor-Critic models (Basic, GAE, PPO). Supports all three variants with model loading utilities.
+
+---
+
+### Future Implementations (Planned)
+- **Deep Q-Networks (DQN)** - Value-based methods for discrete actions
+- **Soft Actor-Critic (SAC)** - Off-policy with entropy regularization
+- **Group Relative Policy Optimization (GRPO)** - Methods used to train Deepseek-r1
+
+---
+
+## Environments
+
+### [Delivery Drone Landing](delivery_drone/)
 
 A physics-based drone landing game designed as a clean RL environment for experimentation.
 
@@ -94,49 +155,13 @@ A physics-based drone landing game designed as a clean RL environment for experi
 - Bottom center of drone must be on platform
 - Must have fuel remaining
 
-**Status:** ✅ Complete - Trainable with policy gradient methods
+**Status:** Complete - Successfully trained with multiple RL algorithms
 
-[→ View Full Documentation](delivery_drone/README.md)
-
----
-
-### 🚗 [2D Visual Driving RL](visual_driving_2d/)
-
-Learning autonomous driving from raw pixel observations using progressive complexity training.
-
-**Features:**
-- Visual RL with CNN-based policies (no clean state vectors)
-- Progressive curriculum: basic driving → navigation → obstacles → traffic
-- Top-down 2D rendering for tractable learning
-- Frame stacking and visual feature engineering
-- Multiple phases of increasing complexity
-
-**Key RL Challenges:**
-- Learning from high-dimensional visual input (84x84x3 RGB images)
-- Feature extraction via CNNs (what patterns matter for driving?)
-- Multi-objective optimization (safety, efficiency, smoothness)
-- Curriculum learning across 10+ progressive phases
-- Generalization across road layouts and conditions
-
-**Progressive Phases:**
-1. **Basic Driving** - Lane keeping and vehicle control from pixels
-2. **Navigation** - Goal-directed driving through road networks
-3. **Static Obstacles** - Collision avoidance with parked cars/barriers
-4. **Dynamic Traffic** - Handling other vehicles (rule-based AI)
-5. **Traffic Signals** - Following lights, stop signs, right-of-way
-6. **Pedestrians** - Crosswalk yielding and safety
-7. **Environmental Variations** - Weather, lighting, road textures
-8. **Highway Driving** - High-speed multi-lane navigation
-9. **Parking** - Precision control and reversing
-10. **Advanced** - Roundabouts, multi-agent RL, V2V communication
-
-**Status:** 🚧 In Development
-
-[→ View Full Documentation](visual_driving_2d/README.md)
+[View Full Documentation](delivery_drone/README.md)
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Run Algorithm Implementations
 
@@ -148,7 +173,9 @@ pip install torch numpy pygame jupyter tqdm
 jupyter notebook
 
 # Open and run:
-# - Policy_Gradients_Baseline.ipynb (REINFORCE with baseline implementation)
+# - Policy_Gradients.ipynb (REINFORCE with baseline)
+# - Actor_Critic_Basic.ipynb (Actor-Critic with TD error)
+# - Actor_Critic_PPO.ipynb (PPO implementation)
 ```
 
 ### Train in the Drone Environment
@@ -167,38 +194,43 @@ python manual_play.py
 python socket_server.py --num-games 6 --render none --randomize-drone
 
 # Run your training script
-# See Policy_Gradients_Baseline.ipynb for complete training code
+# See Policy_Gradients.ipynb or Actor_Critic_Basic.ipynb for training code
 ```
 
 ---
 
-## 📚 Learning Path
+## Learning Path
 
 This repository documents learning RL through **implementation, not just theory**.
 
-### Phase 1: Understanding Policy Gradients (✅ Complete)
-- ✅ Implemented REINFORCE with baseline from scratch
-- ✅ Built custom drone landing environment with socket server
-- ✅ Learned reward shaping the hard way (debugging hovering/spinning exploits)
-- ✅ Implemented parallel training infrastructure
-- ✅ Discovered importance of velocity-based rewards over proximity rewards
-- ✅ Learned gradient clipping and advantage normalization
+### Phase 1: Understanding Policy Gradients (Complete)
+- Implemented REINFORCE with baseline from scratch
+- Built custom drone landing environment with socket server
+- Learned reward shaping the hard way (debugging hovering/spinning exploits)
+- Implemented parallel training infrastructure
+- Discovered importance of velocity-based rewards over proximity rewards
+- Learned gradient clipping and advantage normalization
 
 **Key Insight:** *Reward engineering is 90% of the work in RL. The algorithm is the easy part.*
 
-### Phase 2: Value-Based Methods (🚧 In Progress)
-- Implementing DQN for discrete action spaces
-- Exploring experience replay and target networks
-- Comparing sample efficiency with policy gradients
+### Phase 2: Actor-Critic Methods (Complete)
+- Implemented basic Actor-Critic with TD error (68% success rate)
+- Attempted Generalized Advantage Estimation (failed, documented lessons)
+- Implemented Proximal Policy Optimization (76% success rate, best results)
+- Learned critical importance of detaching TD targets
+- Discovered gamma must match task horizon (0.99 for 100-300 step tasks)
+- Fixed reward hacking exploits (hovering, zooming) with velocity-based rewards
 
-### Phase 3: Advanced Policy Gradients (📋 Planned)
-- Actor-Critic methods (A2C, A3C)
-- Proximal Policy Optimization (PPO)
-- Trust region methods
+**Key Insight:** *Three bugs cost me days: moving target problem, invisible rewards from low gamma, and reward function exploits. Always detach your TD targets.*
+
+### Phase 3: Value-Based Methods (Planned)
+- Deep Q-Networks (DQN) for discrete action spaces
+- Experience replay and target networks
+- Comparing sample efficiency with policy gradient methods
 
 ---
 
-## 🛠️ Technologies
+## Technologies
 
 - **Python 3.12+** - Primary language
 - **PyTorch** - Neural networks and automatic differentiation
@@ -209,18 +241,25 @@ This repository documents learning RL through **implementation, not just theory*
 
 ---
 
-## 📖 Documentation
+## Documentation
 
 Each implementation and environment contains detailed documentation:
 
 - **Training Notebooks** - Complete implementations with explanations
 - **Environment READMEs** - API documentation, setup instructions
 - **Implementation Notes** - Design decisions and lessons learned
-- **[RL Methods Summary](delivery_drone/docs/RL_METHODS_SUMMARY.md)** - Theory notes
+- **[docs/ACTOR_CRITIC_LESSONS_LEARNED.md](docs/ACTOR_CRITIC_LESSONS_LEARNED.md)** - Critical Actor-Critic bugs and fixes
+- **[delivery_drone/docs/RL_METHODS_SUMMARY.md](delivery_drone/docs/RL_METHODS_SUMMARY.md)** - Theory notes
+
+### Blog Posts
+- **[blogs/RL-1-Policy-Gradients/policy_gradient.md](blogs/RL-1-Policy-Gradients/policy_gradient.md)** - REINFORCE implementation journey
+- **[blogs/RL-2-Actor-critic/actor_critic.md](blogs/RL-2-Actor-critic/actor_critic.md)** - Comprehensive Actor-Critic blog (91 KB)
+- **[blogs/RL-2-Actor-critic/part1_actor_critic_bugs.md](blogs/RL-2-Actor-critic/part1_actor_critic_bugs.md)** - Debugging Actor-Critic (Part 1)
+- **[blogs/RL-2-Actor-critic/part2_gae_to_ppo.md](blogs/RL-2-Actor-critic/part2_gae_to_ppo.md)** - From GAE to PPO (Part 2)
 
 ---
 
-## 📊 Resources
+## Resources
 
 ### RL Theory
 - [Spinning Up in Deep RL](https://spinningup.openai.com/) - OpenAI's comprehensive RL guide
@@ -236,7 +275,7 @@ Each implementation and environment contains detailed documentation:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 This is a personal learning repository, but discussions are welcome! Feel free to:
 - Open issues for questions about implementations
@@ -248,7 +287,7 @@ This is a personal learning repository, but discussions are welcome! Feel free t
 
 ---
 
-## 📝 License
+## License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
@@ -256,7 +295,7 @@ Free to use for learning, research, and experimentation.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 This learning journey is inspired by:
 - **OpenAI Spinning Up** - For the excellent RL curriculum
@@ -264,4 +303,4 @@ This learning journey is inspired by:
 - **Sutton & Barto** - For the RL bible
 - **The RL research community** - For publishing implementations and lessons learned
 
-**Note:** This repository is actively being developed as I learn. Expect regular updates, new implementations, and improved training techniques. Follow along for the messy reality of learning RL! 🚀
+**Note:** This repository is actively being developed as I learn. Expect regular updates, new implementations, and improved training techniques. Follow along for the messy reality of learning RL!
