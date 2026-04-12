@@ -287,3 +287,5 @@ __marimo__/
 
 examples/
 CLAUDE.md*
+temp/
+unsloth_compiled_cache/
