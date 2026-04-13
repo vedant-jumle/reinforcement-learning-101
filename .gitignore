@@ -289,3 +289,5 @@ examples/
 CLAUDE.md*
 temp/
 unsloth_compiled_cache/
+slurm/
+checkpoints/

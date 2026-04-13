@@ -89,6 +89,10 @@ def compute_reward(
     if guess not in word_set:
         return -1.0
 
+    # Penalise repeating a word already guessed in this game
+    if guess in guesses_so_far:
+        return -1.5
+
     # 3. Score the guess
     feedback = score_guess(guess, target)
     letter_score = compute_letter_score(feedback)

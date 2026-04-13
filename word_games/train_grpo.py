@@ -46,6 +46,8 @@ class TrainConfig:
     num_train_epochs: int = 1
     learning_rate: float = 5e-6
     warmup_steps: int = 20
+    beta: float = 0.04                 # KL penalty — keeps model from collapsing away from reference
+    temperature: float = 1.0           # generation temperature — keep at 1.0 for diversity
     output_dir: str = "./checkpoints/wordle-grpo"
     logging_steps: int = 10
     save_steps: int = 100
@@ -147,6 +149,8 @@ def train(config):
         num_train_epochs=config.num_train_epochs,
         learning_rate=config.learning_rate,
         warmup_steps=config.warmup_steps,
+        beta=config.beta,
+        temperature=config.temperature,
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to="none",
