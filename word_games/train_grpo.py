@@ -152,7 +152,7 @@ def train(config):
         beta=config.beta,
         temperature=config.temperature,
         bf16=False,
-        fp16=not config.load_in_4bit,  # fp16 on V100 (no-4bit), bf16/default on Ampere
+        fp16=False,  # let unsloth handle mixed precision internally
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to="none",
