@@ -11,6 +11,7 @@ Usage:
 import argparse
 import json
 import math
+import os
 import random
 import sys
 
@@ -23,12 +24,18 @@ from .prompts import get_prompt_builder
 
 # ── Model loading ─────────────────────────────────────────────────────────────
 
-def load_model(model_name, max_seq_length=2048, load_in_4bit=True):
-    """Load model + tokenizer via Unsloth FastLanguageModel.
+def _is_lora_checkpoint(path):
+    """Return True if path is a local LoRA adapter checkpoint."""
+    import os
+    return os.path.isdir(path) and os.path.exists(os.path.join(path, 'adapter_config.json'))
 
-    Calls FastLanguageModel.for_inference() to enable 2x faster generation
-    and disable training hooks. LoRA adapters are merged automatically if
-    present in the checkpoint.
+
+def load_model(model_name, max_seq_length=2048, load_in_4bit=True):
+    """Load model + tokenizer, supporting both Unsloth and PEFT LoRA checkpoints.
+
+    If model_name is a local directory with adapter_config.json, loads the LoRA
+    adapter via PEFT (merges into base model for inference). Otherwise loads via
+    Unsloth FastLanguageModel.
 
     Args:
         model_name: HuggingFace repo name or local path.
@@ -38,6 +45,52 @@ def load_model(model_name, max_seq_length=2048, load_in_4bit=True):
     Returns:
         (model, tokenizer) tuple ready for model.generate().
     """
+    if _is_lora_checkpoint(model_name):
+        return _load_lora_checkpoint(model_name)
+    return _load_unsloth(model_name, max_seq_length, load_in_4bit)
+
+
+def _load_lora_checkpoint(path, base_model_name='unsloth/Qwen2.5-0.5B-Instruct'):
+    """Load a LoRA adapter checkpoint via PEFT and merge into base model.
+
+    Overrides base_model_name_or_path from adapter_config.json since the saved
+    path may point to a cluster-specific location not available locally.
+    """
+    import json
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    # Read adapter config to get the intended base model, override if it's an
+    # absolute path that doesn't exist locally
+    adapter_config_path = os.path.join(path, 'adapter_config.json')
+    with open(adapter_config_path) as f:
+        adapter_config = json.load(f)
+
+    saved_base = adapter_config.get('base_model_name_or_path', '')
+    if os.path.isabs(saved_base) and not os.path.exists(saved_base):
+        print(f"Base model path {saved_base!r} not found locally, using {base_model_name!r}")
+        base = base_model_name
+    else:
+        base = saved_base
+
+    print(f"Loading base model: {base}")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base,
+        device_map='auto',
+        torch_dtype=torch.float16,
+    )
+    print(f"Loading LoRA adapter from: {path}")
+    model = PeftModel.from_pretrained(base_model, path)
+    model = model.merge_and_unload()
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(base)
+    print(f"LoRA checkpoint loaded and merged on {next(model.parameters()).device}")
+    return model, tokenizer
+
+
+def _load_unsloth(model_name, max_seq_length, load_in_4bit):
+    """Load model via Unsloth FastLanguageModel."""
     try:
         from unsloth import FastLanguageModel
     except ImportError:
@@ -58,7 +111,7 @@ def load_model(model_name, max_seq_length=2048, load_in_4bit=True):
 
 # ── Generation ────────────────────────────────────────────────────────────────
 
-def generate_guess(model, tokenizer, conversation, max_new_tokens, prompt_builder):
+def generate_guess(model, tokenizer, conversation, max_new_tokens, prompt_builder, verbose=False):
     """Run one generation step and parse the <guess> tag.
 
     Args:
@@ -67,6 +120,7 @@ def generate_guess(model, tokenizer, conversation, max_new_tokens, prompt_builde
         conversation: List of {"role": ..., "content": ...} dicts.
         max_new_tokens: Max tokens to generate.
         prompt_builder: Prompt module with parse_guess().
+        verbose: If True, print the raw model response.
 
     Returns:
         (guess, response_text) where guess is None if parsing failed.
@@ -75,41 +129,56 @@ def generate_guess(model, tokenizer, conversation, max_new_tokens, prompt_builde
         conversation,
         return_tensors='pt',
         add_generation_prompt=True,
-    ).to(model.device)
+    )
+    # apply_chat_template may return a BatchEncoding dict or a raw tensor
+    if hasattr(inputs, 'input_ids'):
+        input_ids = inputs.input_ids.to(model.device)
+    else:
+        input_ids = inputs.to(model.device)
 
+    model.generation_config.max_length = None
     output_ids = model.generate(
-        input_ids=inputs,
+        input_ids=input_ids,
         max_new_tokens=max_new_tokens,
-        use_cache=True,     # Unsloth-optimised KV cache
+        use_cache=True,
     )
     response = tokenizer.decode(
-        output_ids[0][inputs.shape[1]:],
+        output_ids[0][input_ids.shape[1]:],
         skip_special_tokens=True,
     )
+    if verbose:
+        print(f"\n--- model response ---\n{response}\n--- end ---")
     return prompt_builder.parse_guess(response), response
 
 
 # ── Per-game eval loops ───────────────────────────────────────────────────────
 
-def eval_wordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guesses=6):
+def eval_wordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guesses=6, verbose=False):
     """Play n_games of Wordle, sampling targets from word_list."""
+    from tqdm.auto import tqdm
     pb = get_prompt_builder('wordle')
     game = WordleGame()
     results = []
 
-    for i in range(n_games):
+    for i in tqdm(range(n_games), desc="Wordle eval"):
         target = random.choice(word_list)
         state = game.reset(target=target)
         invalid_count = 0
         info_gains = []
 
+        if verbose:
+            print(f"\n{'='*50}\nGame {i+1} | target: {target}\n{'='*50}")
+
         while not state['done']:
             conversation = pb.build_conversation(state, max_guesses=max_guesses)
-            guess, _ = generate_guess(model, tokenizer, conversation, max_new_tokens, pb)
+            guess, _ = generate_guess(model, tokenizer, conversation, max_new_tokens, pb, verbose=verbose)
 
             if guess is None:
                 invalid_count += 1
-                guess = random.choice(game.word_list)   # fallback: advance game
+                fallback = random.choice(game.word_list)
+                if verbose:
+                    print(f"  [no guess parsed — fallback: {fallback}]")
+                guess = fallback
 
             from .utils import filter_candidates, load_word_list as _load
             # Information gain: log2(candidates_before / candidates_after)
@@ -121,6 +190,10 @@ def eval_wordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guesse
                 candidates_before = len(game.word_list)
 
             state, reward, done, info = game.step(guess)
+
+            if verbose and state['guesses']:
+                last_feedback = state['feedbacks'][-1]
+                print(f"  guess: {guess}  feedback: {' '.join(last_feedback)}")
 
             if 'error' in info:
                 invalid_count += 1
@@ -139,20 +212,17 @@ def eval_wordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guesse
             'target': target,
         })
 
-        if (i + 1) % 10 == 0:
-            wins = sum(r['won'] for r in results)
-            print(f"  [{i+1}/{n_games}] win_rate={wins/(i+1):.2%}")
-
     return results
 
 
 def eval_quordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guesses=9):
     """Play n_games of Quordle, sampling targets from word_list."""
+    from tqdm.auto import tqdm
     pb = get_prompt_builder('quordle')
     game = QuordleGame()
     results = []
 
-    for i in range(n_games):
+    for i in tqdm(range(n_games), desc="Quordle eval"):
         targets = random.sample(word_list, 4)
         state = game.reset(targets=targets)
         invalid_count = 0
@@ -177,20 +247,17 @@ def eval_quordle(model, tokenizer, word_list, n_games, max_new_tokens, max_guess
             'targets': targets,
         })
 
-        if (i + 1) % 10 == 0:
-            wins = sum(r['won'] for r in results)
-            print(f"  [{i+1}/{n_games}] win_rate={wins/(i+1):.2%}")
-
     return results
 
 
 def eval_absurdle(model, tokenizer, word_list, n_games, max_new_tokens, max_steps=50):
     """Play n_games of Absurdle. Games are capped at max_steps to prevent infinite loops."""
+    from tqdm.auto import tqdm
     pb = get_prompt_builder('absurdle')
     game = AbsurdleGame()
     results = []
 
-    for i in range(n_games):
+    for i in tqdm(range(n_games), desc="Absurdle eval"):
         state = game.reset()
         invalid_count = 0
         step = 0
@@ -215,10 +282,6 @@ def eval_absurdle(model, tokenizer, word_list, n_games, max_new_tokens, max_step
             'invalid_count': invalid_count,
             'hit_step_limit': step >= max_steps and not state['done'],
         })
-
-        if (i + 1) % 10 == 0:
-            wins = sum(r['won'] for r in results)
-            print(f"  [{i+1}/{n_games}] win_rate={wins/(i+1):.2%}")
 
     return results
 
@@ -271,6 +334,7 @@ def main():
                         help='Use last N words as held-out eval set (0 = use full list)')
     parser.add_argument('--output', default=None, help='Save JSON results to this path')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--verbose', action='store_true', help='Print model responses and game state')
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -294,7 +358,7 @@ def main():
     # Run eval
     print(f"\nRunning {args.n_games} games of {args.game}...")
     if args.game == 'wordle':
-        results = eval_wordle(model, tokenizer, eval_words, args.n_games, args.max_new_tokens)
+        results = eval_wordle(model, tokenizer, eval_words, args.n_games, args.max_new_tokens, verbose=args.verbose)
     elif args.game == 'quordle':
         results = eval_quordle(model, tokenizer, eval_words, args.n_games, args.max_new_tokens)
     elif args.game == 'absurdle':

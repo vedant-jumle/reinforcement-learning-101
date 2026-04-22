@@ -25,7 +25,7 @@ import json
 import random
 
 from .utils import load_word_list, score_guess, DEFAULT_WORD_LIST
-from .reward import compute_letter_score
+from .reward import compute_letter_score, AVG_RANDOM_SCORE
 from .prompts.wordle import build_conversation
 
 
@@ -103,7 +103,7 @@ def generate_wordle_dataset(
 
         guesses = []
         feedbacks = []
-        prev_score = 0.0
+        prev_score = AVG_RANDOM_SCORE
 
         # Number of random guesses to play before recording a training state.
         # Uniform over [0, max_guesses-1] so all board depths are represented.

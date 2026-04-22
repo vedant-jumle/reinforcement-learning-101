@@ -11,15 +11,23 @@ Rules:
   Y = correct letter, wrong position
   X = letter not in the word
 - You have {max_guesses} guesses to find the word
+- NEVER repeat a word you have already guessed
 
 YOU MUST RESPOND IN EXACTLY THIS FORMAT — NO EXCEPTIONS:
 <think>
-[your reasoning here]
+[reason about which letters are confirmed, excluded, or misplaced, then pick a word that uses this information]
 </think>
 <guess>yourword</guess>
 
-The <guess> tag is REQUIRED. It must contain exactly one 5-letter word. Example:
-<guess>crane</guess>"""
+Example: if you guessed "crane" and got "X Y X G X", you know:
+- C is not in the word
+- R is in the word but not position 2
+- A is not in the word
+- N is in position 4
+- E is not in the word
+So your think block should reason about these constraints and pick a new word that fits.
+
+The <guess> tag is REQUIRED. It must contain exactly one 5-letter word."""
 
 
 def build_system_prompt(max_guesses=6):
