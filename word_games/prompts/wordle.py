@@ -12,22 +12,24 @@ Rules:
   X = letter not in the word
 - You have {max_guesses} guesses to find the word
 - NEVER repeat a word you have already guessed
+- Your guess MUST NOT contain any letter marked X (absent)
+- Your guess MUST place any letter marked G in its exact position
+- Your guess MUST include any letter marked Y somewhere (but not in the same position)
 
-YOU MUST RESPOND IN EXACTLY THIS FORMAT — NO EXCEPTIONS:
+YOU MUST RESPOND IN EXACTLY THIS FORMAT:
 <think>
-[reason about which letters are confirmed, excluded, or misplaced, then pick a word that uses this information]
+Position 1: [confirmed letter, or options/unknown]
+Position 2: [confirmed letter, or options/unknown]
+Position 3: [confirmed letter, or options/unknown]
+Position 4: [confirmed letter, or options/unknown]
+Position 5: [confirmed letter, or options/unknown]
+Absent letters: [letters confirmed not in word]
+Present but unplaced: [letters that must appear somewhere]
+Best guess: [word and why it uses the above constraints]
 </think>
-<guess>yourword</guess>
+<guess>word</guess>
 
-Example: if you guessed "crane" and got "X Y X G X", you know:
-- C is not in the word
-- R is in the word but not position 2
-- A is not in the word
-- N is in position 4
-- E is not in the word
-So your think block should reason about these constraints and pick a new word that fits.
-
-The <guess> tag is REQUIRED. It must contain exactly one 5-letter word."""
+The <guess> tag is REQUIRED. It must contain exactly one 5-letter word in lowercase."""
 
 
 def build_system_prompt(max_guesses=6):
@@ -40,7 +42,11 @@ def build_user_message(state):
     for i, (guess, feedback) in enumerate(zip(state['guesses'], state['feedbacks'])):
         fb_str = ' '.join(feedback)
         lines.append(f"Guess {i + 1}: {guess} → {fb_str}")
-    lines.append("\nWhat is your next guess? Respond with <think>...</think><guess>word</guess>")
+    if state['guesses']:
+        lines.append("\nFill in the template and guess a word consistent with all constraints above.")
+    else:
+        lines.append("\nNo guesses yet. Fill in the template and make your first guess.")
+    lines.append("Respond with <think>...</think><guess>word</guess>")
     return '\n'.join(lines)
 
 
