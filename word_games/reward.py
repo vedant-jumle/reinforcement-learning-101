@@ -1,17 +1,17 @@
 """Reward functions for Wordle GRPO training.
 
 Reward hierarchy (single-guess-per-example setup):
-  1. Format penalty   (-8.0) if no valid <guess> tag parsed
-  2. Invalid word     (-4.0) if parsed word not in word list
-  3. Repeat penalty   (-10.0) if guess already played this game
+  1. Format penalty   (-50.0) if no valid <guess> tag parsed
+  2. Invalid word     (-25.0) if parsed word not in word list
+  3. Repeat penalty   (-40.0) if guess already played this game
   4. Step reward      = (letter_score + candidate_bonus) * 0.5
-  5. Think bonus      = +0.5 if guess respects all known constraints, else 0.0
+  5. Think bonus/penalty = f(violation_count) — scales with number of violations
   6. Terminal         = WIN_REWARD[guess_index] on win, LOSS_REWARD on loss (last guess)
 
 Design principles:
-  - Terminal signal dominates: win reward (5-20) >> total step rewards (~9 max)
+  - Terminal signal dominates: win reward (30-100) >> total step rewards (~9 max)
   - Format penalties are all worse than the worst possible game outcome
-  - Think bonus rewards constraint-consistent guesses, not text length
+  - Think penalty scales per-violation so a single slip isn't equivalent to total failure
   - Step rewards are guidance only, small relative to terminal
 """
 
@@ -25,18 +25,18 @@ from .prompts.wordle import parse_guess
 AVG_RANDOM_SCORE = 3.5
 
 # Format/validity penalties — all worse than worst possible game outcome
-NO_TAG_PENALTY = -8.0
-INVALID_WORD_PENALTY = -4.0
-REPEAT_PENALTY = -10.0
+NO_TAG_PENALTY = -50.0
+INVALID_WORD_PENALTY = -25.0
+REPEAT_PENALTY = -40.0
 
-# Terminal rewards — dominate all step rewards
-WIN_REWARD = {0: 20, 1: 16, 2: 13, 3: 10, 4: 7, 5: 5}   # keyed by 0-based guess_index
-LOSS_REWARD = -5.0
+# Terminal rewards — dominate all step rewards (10x ratio vs max step reward)
+WIN_REWARD = {0: 100, 1: 80, 2: 65, 3: 50, 4: 40, 5: 30}  # keyed by 0-based guess_index
+LOSS_REWARD = -10.0
 
-# Think bonus
-THINK_BONUS_CONSISTENT = 0.5    # guess respects all known constraints
-THINK_BONUS_VALID = 0.2         # valid guess but no/empty think block
-THINK_PENALTY_VIOLATION = -0.5  # guess violates known constraints
+# Think bonus / per-violation penalty
+THINK_BONUS_CONSISTENT = 0.5       # guess respects all constraints and has think block
+THINK_BONUS_VALID = 0.2            # valid guess but no/empty think block
+THINK_PENALTY_PER_VIOLATION = -2.0 # multiplied by violation count from check_constraint_violations
 
 
 def compute_letter_score(feedback):
@@ -110,14 +110,14 @@ def check_constraint_violations(guess, guesses_so_far, feedbacks_so_far):
 def compute_think_bonus(completion, guess, guesses_so_far, feedbacks_so_far):
     """Reward think block quality based on constraint consistency.
 
-    +0.5 if the guess respects all known constraints (and think block exists)
+    +0.5 if guess respects all known constraints and think block exists
     +0.2 if valid guess but think block is empty/missing
-    -0.5 if the guess violates known constraints
+    -2.0 * violation_count if guess violates known constraints (scales with severity)
     """
     violations = check_constraint_violations(guess, guesses_so_far, feedbacks_so_far)
 
     if violations > 0:
-        return THINK_PENALTY_VIOLATION
+        return THINK_PENALTY_PER_VIOLATION * violations
 
     has_think = bool(re.search(r'<think>\s*.+?\s*</think>', completion, re.DOTALL))
     return THINK_BONUS_CONSISTENT if has_think else THINK_BONUS_VALID

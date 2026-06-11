@@ -55,6 +55,11 @@ class TrainConfig:
     # Dataset
     n_games: int = 5000                # random games to simulate for training data
     word_list_path: str = None         # None = use default data/wordle_list.txt
+    use_solver: bool = False           # use entropy solver to build near-solved boards
+    max_candidates: int = 20           # only emit rows with ≤ this many candidates (use_solver only)
+
+    # SFT warm start
+    sft_checkpoint: str = None         # path to SFT LoRA checkpoint to load before GRPO
 
     # Reward
     discount_base: float = 0.9
@@ -120,14 +125,23 @@ def train(config):
     model.generation_config.max_length = None
     model.generation_config.max_new_tokens = None
 
+    # 1b. Load SFT warm-start adapter if provided
+    if config.sft_checkpoint:
+        print(f"Loading SFT checkpoint from {config.sft_checkpoint}")
+        model.load_adapter(config.sft_checkpoint)
+        print("SFT adapter loaded.")
+
     # 2. Build dataset
     train_words, _ = get_train_eval_split(config.word_list_path)
-    print(f"Generating dataset from {config.n_games} random games "
+    mode = "solver-seeded" if config.use_solver else "random"
+    print(f"Generating dataset from {config.n_games} {mode} games "
           f"({len(train_words)} training words)...")
     train_dataset = generate_wordle_dataset(
         word_list=train_words,
         n_games=config.n_games,
         tokenizer=tokenizer,
+        use_solver=config.use_solver,
+        max_candidates=config.max_candidates,
     )
     print(f"Dataset size: {len(train_dataset)} examples")
 
@@ -204,6 +218,13 @@ def parse_args():
     # Dataset
     parser.add_argument('--n-games', type=int, default=TrainConfig.n_games)
     parser.add_argument('--word-list', default=None)
+    parser.add_argument('--use-solver', action='store_true',
+                        help='Use entropy solver to build near-solved boards (backward curriculum)')
+    parser.add_argument('--max-candidates', type=int, default=TrainConfig.max_candidates,
+                        help='Only emit rows with <= this many remaining candidates (use_solver only)')
+    # SFT warm start
+    parser.add_argument('--sft-checkpoint', default=None,
+                        help='Path to SFT LoRA checkpoint to load before GRPO training')
     # Reward
     parser.add_argument('--discount-base', type=float, default=TrainConfig.discount_base)
     parser.add_argument('--candidate-bonus-weight', type=float,
@@ -229,6 +250,9 @@ def main():
         output_dir=args.output_dir,
         n_games=args.n_games,
         word_list_path=args.word_list,
+        use_solver=args.use_solver,
+        max_candidates=args.max_candidates,
+        sft_checkpoint=args.sft_checkpoint,
         discount_base=args.discount_base,
         candidate_bonus_weight=args.candidate_bonus_weight,
     )

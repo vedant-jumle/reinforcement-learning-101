@@ -24,7 +24,7 @@ Usage:
 import json
 import random
 
-from .utils import load_word_list, score_guess, DEFAULT_WORD_LIST
+from .utils import load_word_list, score_guess, filter_candidates, DEFAULT_WORD_LIST
 from .reward import compute_letter_score, AVG_RANDOM_SCORE
 from .prompts.wordle import build_conversation
 
@@ -63,23 +63,30 @@ def generate_wordle_dataset(
     tokenizer=None,
     max_guesses=6,
     seed=42,
+    use_solver=False,
+    max_candidates=20,
 ):
     """Generate a dataset of single-guess Wordle training examples.
 
     For each game:
       1. Pick a random target word from word_list.
-      2. Play 0–(max_guesses-1) random guesses to advance the board.
+      2. Play 0–(max_guesses-1) guesses to advance the board.
+         - use_solver=False (default): random guesses (original behaviour)
+         - use_solver=True: entropy-maximizing solver guesses, emit only rows
+           where candidates_remaining <= max_candidates (backward curriculum)
       3. Record the board state at each step as a training example.
-
-    This ensures the dataset contains examples at all difficulty levels:
-    empty boards (first guess) through near-complete boards (5th guess).
 
     Args:
         word_list: List of valid 5-letter words to use as targets and guesses.
-        n_games: Number of random games to simulate.
+        n_games: Number of games to simulate.
         tokenizer: HuggingFace tokenizer for apply_chat_template, or None.
         max_guesses: Maximum guesses per game (default 6).
         seed: Random seed for reproducibility.
+        use_solver: If True, use entropy solver to build boards and filter rows
+                    to states with ≤ max_candidates remaining. This ensures
+                    wins appear in GRPO sample groups (backward curriculum).
+        max_candidates: Only emit rows where consistent candidates ≤ this value.
+                        Ignored when use_solver=False.
 
     Returns:
         datasets.Dataset with columns:
@@ -93,8 +100,10 @@ def generate_wordle_dataset(
 
     from tqdm.auto import tqdm
 
+    if use_solver:
+        from .solver import find_best_guess
+
     rng = random.Random(seed)
-    word_set = set(word_list)
 
     rows = []
 
@@ -104,61 +113,90 @@ def generate_wordle_dataset(
         guesses = []
         feedbacks = []
         prev_score = AVG_RANDOM_SCORE
+        candidates = list(word_list)  # tracked only when use_solver=True
 
-        # Number of random guesses to play before recording a training state.
-        # Uniform over [0, max_guesses-1] so all board depths are represented.
-        n_random = rng.randint(0, max_guesses - 1)
+        n_steps = rng.randint(0, max_guesses - 1)
 
-        for step in range(n_random):
-            # Build current state and record it as a training example
-            state = {
-                'guesses': list(guesses),
-                'feedbacks': [list(fb) for fb in feedbacks],
-                'guess_count': len(guesses),
-                'done': False,
-                'won': False,
-            }
+        for step in range(n_steps):
+            # Compute remaining candidates for filtering / solver
+            if use_solver:
+                remaining = len(candidates)
+                # Emit row only when near-solved (backward curriculum)
+                if remaining <= max_candidates:
+                    state = {
+                        'guesses': list(guesses),
+                        'feedbacks': [list(fb) for fb in feedbacks],
+                        'guess_count': len(guesses),
+                        'done': False,
+                        'won': False,
+                    }
+                    prompt = _build_prompt_string(state, tokenizer, max_guesses)
+                    rows.append({
+                        'prompt': prompt,
+                        'target': target,
+                        'guess_index': step,
+                        'prev_score': prev_score,
+                        'guesses_so_far': json.dumps(list(guesses)),
+                        'feedbacks_so_far': json.dumps([list(fb) for fb in feedbacks]),
+                    })
+                # Advance with solver guess
+                next_guess = find_best_guess(candidates, word_list)
+            else:
+                # Original behaviour: record every state, advance randomly
+                state = {
+                    'guesses': list(guesses),
+                    'feedbacks': [list(fb) for fb in feedbacks],
+                    'guess_count': len(guesses),
+                    'done': False,
+                    'won': False,
+                }
+                prompt = _build_prompt_string(state, tokenizer, max_guesses)
+                rows.append({
+                    'prompt': prompt,
+                    'target': target,
+                    'guess_index': step,
+                    'prev_score': prev_score,
+                    'guesses_so_far': json.dumps(list(guesses)),
+                    'feedbacks_so_far': json.dumps([list(fb) for fb in feedbacks]),
+                })
+                next_guess = rng.choice(word_list)
 
-            prompt = _build_prompt_string(state, tokenizer, max_guesses)
-
-            rows.append({
-                'prompt': prompt,
-                'target': target,
-                'guess_index': step,
-                'prev_score': prev_score,
-                'guesses_so_far': json.dumps(list(guesses)),
-                'feedbacks_so_far': json.dumps([list(fb) for fb in feedbacks]),
-            })
-
-            # Advance game with a random guess (not model — offline generation)
-            random_guess = rng.choice(word_list)
-            feedback = score_guess(random_guess, target)
+            feedback = score_guess(next_guess, target)
             prev_score = float(compute_letter_score(feedback))
-            guesses.append(random_guess)
+            guesses.append(next_guess)
             feedbacks.append(feedback)
 
-            # Stop early if we accidentally won
+            if use_solver:
+                candidates = filter_candidates(candidates, next_guess, feedback)
+
             if feedback == ['G', 'G', 'G', 'G', 'G']:
                 break
 
-        # Always add the state at position n_random (the actual training point)
+        # Always add the state at position n_steps (the actual training point)
         if len(guesses) < max_guesses:
-            state = {
-                'guesses': list(guesses),
-                'feedbacks': [list(fb) for fb in feedbacks],
-                'guess_count': len(guesses),
-                'done': False,
-                'won': False,
-            }
-            prompt = _build_prompt_string(state, tokenizer, max_guesses)
-            rows.append({
-                'prompt': prompt,
-                'target': target,
-                'guess_index': len(guesses),
-                'prev_score': prev_score,
-                'guesses_so_far': json.dumps(list(guesses)),
-                'feedbacks_so_far': json.dumps([list(fb) for fb in feedbacks]),
-            })
+            if use_solver:
+                remaining = len(candidates)
+                emit = remaining <= max_candidates
+            else:
+                emit = True
+
+            if emit:
+                state = {
+                    'guesses': list(guesses),
+                    'feedbacks': [list(fb) for fb in feedbacks],
+                    'guess_count': len(guesses),
+                    'done': False,
+                    'won': False,
+                }
+                prompt = _build_prompt_string(state, tokenizer, max_guesses)
+                rows.append({
+                    'prompt': prompt,
+                    'target': target,
+                    'guess_index': len(guesses),
+                    'prev_score': prev_score,
+                    'guesses_so_far': json.dumps(list(guesses)),
+                    'feedbacks_so_far': json.dumps([list(fb) for fb in feedbacks]),
+                })
 
     rng.shuffle(rows)
     return Dataset.from_list(rows)
